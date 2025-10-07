@@ -2134,7 +2134,7 @@ impl Parser {
         Ok(self.active_spses.entry(key).or_insert(sps))
     }
 
-    pub fn parse_pps(&mut self, nalu: &Nalu) -> Result<&Pps, String> {
+    pub fn parse_pps(&mut self, nalu: &Nalu) -> Result<&Rc<Pps>, String> {
         if !matches!(nalu.header.type_, NaluType::Pps) {
             return Err(format!(
                 "Invalid NALU type, expected {:?}, got {:?}",

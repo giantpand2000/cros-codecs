@@ -2205,7 +2205,7 @@ pub struct Parser {
 
 impl Parser {
     /// Parse a VPS NALU.
-    pub fn parse_vps(&mut self, nalu: &Nalu) -> Result<&Vps, String> {
+    pub fn parse_vps(&mut self, nalu: &Nalu) -> Result<&Rc<Vps>, String> {
         if !matches!(nalu.header.type_, NaluType::VpsNut) {
             return Err(format!(
                 "Invalid NALU type, expected {:?}, got {:?}",
@@ -3063,7 +3063,7 @@ impl Parser {
     }
 
     /// Parse a SPS NALU.
-    pub fn parse_sps(&mut self, nalu: &Nalu) -> Result<&Sps, String> {
+    pub fn parse_sps(&mut self, nalu: &Nalu) -> Result<&Rc<Sps>, String> {
         if !matches!(nalu.header.type_, NaluType::SpsNut) {
             return Err(format!(
                 "Invalid NALU type, expected {:?}, got {:?}",
@@ -3358,7 +3358,7 @@ impl Parser {
     }
 
     /// Parse a PPS NALU.
-    pub fn parse_pps(&mut self, nalu: &Nalu) -> Result<&Pps, String> {
+    pub fn parse_pps(&mut self, nalu: &Nalu) -> Result<&Rc<Pps>, String> {
         if !matches!(nalu.header.type_, NaluType::PpsNut) {
             return Err(format!(
                 "Invalid NALU type, expected {:?}, got {:?}",
