@@ -90,6 +90,138 @@ where
             offset: nalu_offset - start_code_offset,
         })
     }
+
+    /// Parse a length-prefixed NAL unit (avcC/hvcC format).
+    ///
+    /// This method is used for parsing NAL units in MP4/MKV containers where
+    /// NAL units are prefixed with their length instead of start codes.
+    ///
+    /// # Arguments
+    /// * `cursor` - Cursor positioned at the start of the length field
+    /// * `length_size` - Size of the length field in bytes (1, 2, or 4)
+    ///
+    /// # Format
+    /// ```text
+    /// [length (1/2/4 bytes)] [NAL header] [NAL payload]
+    /// ```
+    ///
+    /// # Example
+    /// ```no_run
+    /// use std::io::Cursor;
+    /// use cros_codecs::codec::h264::parser::Nalu;
+    ///
+    /// // avcC format: [00 1A] [67 64 00 1F ...]
+    /// let data = &[0x00, 0x1A, 0x67, 0x64, /* ... */];
+    /// let mut cursor = Cursor::new(data);
+    ///
+    /// // Parse with 2-byte length prefix (avcC SPS/PPS length)
+    /// let nalu = Nalu::from_length_prefixed(&mut cursor, 2).unwrap();
+    /// ```
+    pub fn from_length_prefixed(
+        cursor: &mut Cursor<&'a [u8]>,
+        length_size: usize,
+    ) -> Result<Nalu<'a, U>, String> {
+        use std::io::Read;
+
+        let bitstream = cursor.clone().into_inner();
+        let start_pos = usize::try_from(cursor.position()).map_err(|err| err.to_string())?;
+
+        // Read NAL length based on length_size
+        let nal_length = match length_size {
+            1 => {
+                let mut buf = [0u8; 1];
+                cursor
+                    .read_exact(&mut buf)
+                    .map_err(|e| format!("Failed to read 1-byte length: {}", e))?;
+                buf[0] as usize
+            }
+            2 => {
+                let mut buf = [0u8; 2];
+                cursor
+                    .read_exact(&mut buf)
+                    .map_err(|e| format!("Failed to read 2-byte length: {}", e))?;
+                u16::from_be_bytes(buf) as usize
+            }
+            4 => {
+                let mut buf = [0u8; 4];
+                cursor
+                    .read_exact(&mut buf)
+                    .map_err(|e| format!("Failed to read 4-byte length: {}", e))?;
+                u32::from_be_bytes(buf) as usize
+            }
+            _ => return Err(format!("Invalid length size: {} (must be 1, 2, or 4)", length_size)),
+        };
+
+        // Current position is the start of NAL data
+        let nalu_offset = usize::try_from(cursor.position()).map_err(|err| err.to_string())?;
+
+        // Validate that we have enough data
+        if nalu_offset + nal_length > bitstream.len() {
+            return Err(format!(
+                "NAL extends beyond buffer: offset {} + length {} > buffer size {}",
+                nalu_offset,
+                nal_length,
+                bitstream.len()
+            ));
+        }
+
+        // Parse NAL header
+        let hdr = U::parse(cursor)?;
+
+        // Move cursor to the end of this NAL unit (start of next NAL or end of buffer)
+        cursor
+            .set_position(u64::try_from(nalu_offset + nal_length).map_err(|err| err.to_string())?);
+
+        // Return Nalu structure
+        // data contains [length field] + [NAL data]
+        // offset points to where NAL data starts (after length field)
+        Ok(Nalu {
+            header: hdr,
+            data: Cow::from(&bitstream[start_pos..nalu_offset + nal_length]),
+            size: nal_length,
+            offset: length_size,
+        })
+    }
+
+    /// Parse a raw NAL unit without any prefix (no start code, no length).
+    ///
+    /// This method is useful when you have already extracted the NAL unit data
+    /// and just need to parse it.
+    ///
+    /// # Arguments
+    /// * `nal_data` - The raw NAL unit data (must include NAL header)
+    ///
+    /// # Format
+    /// ```text
+    /// [NAL header] [NAL payload]
+    /// ```
+    ///
+    /// # Example
+    /// ```no_run
+    /// use cros_codecs::codec::h264::parser::Nalu;
+    ///
+    /// // Raw SPS NAL: [67 64 00 1F ...]
+    /// let nal_data = &[0x67, 0x64, 0x00, 0x1F, /* ... */];
+    ///
+    /// let nalu = Nalu::from_bytes(nal_data).unwrap();
+    /// ```
+    pub fn from_bytes(nal_data: &'a [u8]) -> Result<Nalu<'a, U>, String> {
+        if nal_data.is_empty() {
+            return Err("NAL data is empty".to_string());
+        }
+
+        let mut cursor = Cursor::new(nal_data);
+
+        // Parse NAL header
+        let hdr = U::parse(&mut cursor)?;
+
+        Ok(Nalu {
+            header: hdr,
+            data: Cow::from(nal_data),
+            size: nal_data.len(),
+            offset: 0, // NAL data starts at the beginning
+        })
+    }
 }
 
 impl<'a, U> Nalu<'a, U>
